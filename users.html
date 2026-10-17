@@ -1,0 +1,15 @@
+{% extends "base.html" %}{% block title %}Users{% endblock %}
+{% block content %}
+<div class="page-heading"><div><p class="eyebrow">PEOPLE DIRECTORY</p><h1>Users</h1><p class="subheading">Manage the people in your network.</p></div><span class="count-pill">{{ all_count }} total users</span></div>
+<div class="two-col">
+<section class="panel"><div class="panel-heading"><span class="mini-icon">＋</span><div><h2>Add user</h2><p>Create a new profile in the network.</p></div></div>
+<form method="post" class="form-stack"><label for="name">Full name</label><input id="name" name="name" placeholder="e.g. Himanshu Sharma" required maxlength="60"><small>Letters, spaces, apostrophes, dots and hyphens. Names are unique regardless of case.</small><button class="button" type="submit">Add user</button></form></section>
+<section class="panel"><div class="panel-heading"><span class="mini-icon">⌕</span><div><h2>Search users</h2><p>Find a person by name.</p></div></div>
+<form method="get" class="form-stack"><label for="q">Search</label><input id="q" name="q" value="{{ search }}" placeholder="Type a name…"><button class="button" type="submit">Search</button>{% if search %}<a class="text-link" href="{{ url_for('users_page') }}">Clear search</a>{% endif %}</form></section>
+</div>
+<section class="panel table-panel"><div class="section-title"><div><h2>All users{% if search %} matching “{{ search }}”{% endif %}</h2><p>{{ users|length }} result(s)</p></div></div>
+{% if users %}<div class="table-wrap"><table><thead><tr><th>Name</th><th>Friends</th><th class="right">Actions</th></tr></thead><tbody>
+{% for u in users %}<tr><td><span class="avatar">{{ u[0]|upper }}</span><a class="person-link" href="{{ url_for('user_detail', name=u) }}">{{ u }}</a></td><td><span class="number-chip">{{ friend_count(u) }}</span></td><td class="right action-cell"><a class="button small secondary" href="{{ url_for('user_detail', name=u) }}">View</a><form method="post" action="{{ url_for('remove_user') }}" onsubmit="return confirm('Remove this user and all their friendship links?')"><input type="hidden" name="name" value="{{ u }}"><button class="button small danger-outline" type="submit">Remove</button></form></td></tr>{% endfor %}
+</tbody></table></div>{% else %}<div class="empty-state"><span>⌕</span><h3>No users found</h3><p>Try another search or add a new user.</p></div>{% endif %}
+</section>
+{% endblock %}
