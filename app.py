@@ -77,6 +77,7 @@ def inject_global_data():
     all_users = social_graph.get_all_users()
     return {
         "all_users_global": all_users,
+        "social_graph": social_graph,
         "current_year": time.strftime("%Y")
     }
 
@@ -475,6 +476,57 @@ def api_shortest_path():
 def api_stats():
     """Returns JSON network statistics."""
     return jsonify(social_graph.get_statistics())
+
+
+# -----------------------------------------------------------------
+# Vercel Serverless Routing Fallbacks & WSGI Middleware
+# -----------------------------------------------------------------
+
+@app.route("/api/index", defaults={"subpath": ""})
+@app.route("/api/index.py", defaults={"subpath": ""})
+@app.route("/api/index/<path:subpath>")
+@app.route("/api/index.py/<path:subpath>")
+def vercel_entrypoint_fallback(subpath):
+    target = "/" + subpath if subpath else "/"
+    return redirect(target)
+
+
+class VercelPathFixMiddleware:
+    """
+    WSGI middleware that normalizes PATH_INFO when deployed as a Vercel serverless function.
+    Corrects issues where Vercel rewrites or proxies set PATH_INFO to '/api/index' or '/api/index.py'
+    rather than the user's actual requested URL path.
+    """
+    def __init__(self, wsgi_app):
+        self.wsgi_app = wsgi_app
+
+    def __call__(self, environ, start_response):
+        # 1. Check for original URI forwarded by Vercel edge reverse proxy
+        original_uri = (
+            environ.get("HTTP_X_FORWARDED_URI")
+            or environ.get("REQUEST_URI")
+            or environ.get("RAW_URI")
+            or ""
+        )
+        if original_uri:
+            # Strip query string to get path
+            path = original_uri.split("?", 1)[0]
+            if path and path not in ("/api/index", "/api/index.py"):
+                environ["PATH_INFO"] = path
+
+        # 2. If PATH_INFO starts with serverless file prefix, strip it
+        path_info = environ.get("PATH_INFO", "")
+        for prefix in ("/api/index.py", "/api/index"):
+            if path_info.startswith(prefix):
+                remainder = path_info[len(prefix):]
+                environ["PATH_INFO"] = remainder if remainder.startswith("/") else ("/" + remainder)
+                break
+
+        return self.wsgi_app(environ, start_response)
+
+
+app.wsgi_app = VercelPathFixMiddleware(app.wsgi_app)
+
 
 
 # -----------------------------------------------------------------
