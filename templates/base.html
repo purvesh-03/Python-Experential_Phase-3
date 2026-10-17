@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{% block title %}Social Network Friend Recommendation System{% endblock %}</title>
+  <meta name="description" content="Graph Data Structures and Friend Recommendation System in Python. Implements BFS traversal, shortest path, mutual friends calculation, and candidate ranking.">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+  {% block extra_head %}{% endblock %}
+</head>
+<body>
+
+  <!-- Top Navigation Bar -->
+  <nav class="navbar">
+    <div class="nav-container">
+      <a href="{{ url_for('dashboard') }}" class="brand-link">
+        <div class="brand-icon-box">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="18" cy="5" r="3"></circle>
+            <circle cx="6" cy="12" r="3"></circle>
+            <circle cx="18" cy="19" r="3"></circle>
+            <line x1="8.59" y1="13.51" x2="15.42" y2="17.49"></line>
+            <line x1="15.41" y1="6.51" x2="8.59" y2="10.49"></line>
+          </svg>
+        </div>
+        <div>
+          <span>Social Network System</span>
+          <span class="brand-subtitle">Phase 3 • Graph Algorithms</span>
+        </div>
+      </a>
+
+      <ul class="nav-menu">
+        <li>
+          <a href="{{ url_for('dashboard') }}" class="nav-link {% if active_page == 'dashboard' %}active{% endif %}">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <rect x="3" y="3" width="7" height="7"></rect>
+              <rect x="14" y="3" width="7" height="7"></rect>
+              <rect x="14" y="14" width="7" height="7"></rect>
+              <rect x="3" y="14" width="7" height="7"></rect>
+            </svg>
+            Dashboard
+          </a>
+        </li>
+        <li>
+          <a href="{{ url_for('users_list') }}" class="nav-link {% if active_page == 'users' %}active{% endif %}">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
+              <circle cx="9" cy="7" r="4"></circle>
+              <path d="M23 21v-2a4 4 0 0 0-3-3.87"></path>
+              <path d="M16 3.13a4 4 0 0 1 0 7.75"></path>
+            </svg>
+            Users
+          </a>
+        </li>
+        <li>
+          <a href="{{ url_for('friendships_list') }}" class="nav-link {% if active_page == 'friendships' %}active{% endif %}">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
+              <circle cx="8.5" cy="7" r="4"></circle>
+              <line x1="20" y1="8" x2="20" y2="14"></line>
+              <line x1="23" y1="11" x2="17" y2="11"></line>
+            </svg>
+            Friendships
+          </a>
+        </li>
+        <li>
+          <a href="{{ url_for('recommendations_page') }}" class="nav-link {% if active_page == 'recommendations' %}active{% endif %}">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon>
+            </svg>
+            Recommendations
+          </a>
+        </li>
+        <li>
+          <a href="{{ url_for('network_explorer') }}" class="nav-link {% if active_page == 'network' %}active{% endif %}">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <circle cx="6" cy="6" r="3"></circle>
+              <circle cx="6" cy="18" r="3"></circle>
+              <line x1="20" y1="4" x2="8.12" y2="15.88"></line>
+              <line x1="14.47" y1="14.48" x2="20" y2="20"></line>
+              <line x1="8.12" y1="8.12" x2="12" y2="12"></line>
+            </svg>
+            Network
+          </a>
+        </li>
+        <li>
+          <a href="{{ url_for('shortest_path_page') }}" class="nav-link {% if active_page == 'shortest_path' %}active{% endif %}">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <line x1="5" y1="12" x2="19" y2="12"></line>
+              <polyline points="12 5 19 12 12 19"></polyline>
+            </svg>
+            Shortest Path
+          </a>
+        </li>
+        <li>
+          <a href="{{ url_for('bfs_traversal_page') }}" class="nav-link {% if active_page == 'bfs' %}active{% endif %}">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline>
+            </svg>
+            BFS
+          </a>
+        </li>
+        <li>
+          <a href="{{ url_for('statistics_page') }}" class="nav-link {% if active_page == 'statistics' %}active{% endif %}">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <line x1="18" y1="20" x2="18" y2="10"></line>
+              <line x1="12" y1="20" x2="12" y2="4"></line>
+              <line x1="6" y1="20" x2="6" y2="14"></line>
+            </svg>
+            Statistics
+          </a>
+        </li>
+      </ul>
+    </div>
+  </nav>
+
+  <!-- Main Content Wrapper -->
+  <main class="main-wrapper">
+    <!-- Flash Messages -->
+    {% with messages = get_flashed_messages(with_categories=true) %}
+      {% if messages %}
+        <div class="alert-container">
+          {% for category, message in messages %}
+            <div class="alert alert-{{ category }}">
+              <span>{{ message }}</span>
+              <button type="button" class="alert-close" aria-label="Close alert">&times;</button>
+            </div>
+          {% endfor %}
+        </div>
+      {% endif %}
+    {% endwith %}
+
+    {% block content %}{% endblock %}
+  </main>
+
+  <!-- Reusable Delete Confirmation Modal -->
+  <div id="deleteConfirmModal" class="modal-overlay">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h4 style="margin: 0; font-size: 1.1rem; font-weight: 600;">Confirm Action</h4>
+        <button type="button" class="alert-close modal-cancel-btn">&times;</button>
+      </div>
+      <div class="modal-body">
+        <p>Are you sure you want to delete <strong id="deleteTargetName">this user</strong>?</p>
+        <p style="color: var(--text-muted); font-size: 0.85rem; margin-bottom: 0;">
+          This action will permanently delete the member and cascade remove all their friendship connections from the graph and database.
+        </p>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary modal-cancel-btn">Cancel</button>
+        <form id="deleteConfirmForm" method="POST" style="margin: 0;">
+          <button type="submit" class="btn btn-danger">Confirm Delete</button>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <!-- Academic Footer -->
+  <footer class="site-footer">
+    <p style="margin: 0 0 0.5rem 0; font-weight: 500;">
+      Social Network Friend Recommendation System &bull; Phase 3 College Project
+    </p>
+    <p style="margin: 0; font-size: 0.8rem; color: var(--text-subtle);">
+      Graph Adjacency List &bull; Breadth-First Search (BFS) &bull; Mutual Friends Algorithm &bull; Persistent Storage (SQLite / PostgreSQL)
+    </p>
+  </footer>
+
+  <script src="{{ url_for('static', filename='js/app.js') }}"></script>
+  {% block extra_scripts %}{% endblock %}
+</body>
+</html>

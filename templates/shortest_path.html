@@ -1,0 +1,129 @@
+{% extends "base.html" %}
+
+{% block title %}Shortest Connection Path &bull; Social Network System{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <div>
+    <h1 class="page-title">Shortest Connection Path</h1>
+    <p class="page-subtitle">
+      Computes the minimum number of friendship links separating any two members using Breadth-First Search (BFS).
+    </p>
+  </div>
+</div>
+
+<!-- Selection Form -->
+<div class="card">
+  <div class="card-header">
+    <h2 class="card-title">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <line x1="5" y1="12" x2="19" y2="12"></line>
+        <polyline points="12 5 19 12 12 19"></polyline>
+      </svg>
+      Select Start and Destination Members
+    </h2>
+  </div>
+  <div class="card-body">
+    <form method="GET" action="{{ url_for('shortest_path_page') }}" class="form-inline-grid" style="grid-template-columns: 1fr 1fr auto;">
+      <div class="form-group" style="margin-bottom: 0;">
+        <label class="form-label" for="startSelect">Starting Member</label>
+        <select id="startSelect" name="start" class="form-select" required>
+          <option value="" disabled selected>-- Select Starting Member --</option>
+          {% for u in users %}
+          <option value="{{ u.id }}" {% if start_id == u.id %}selected{% endif %}>{{ u.name }}</option>
+          {% endfor %}
+        </select>
+      </div>
+
+      <div class="form-group" style="margin-bottom: 0;">
+        <label class="form-label" for="destSelect">Destination Member</label>
+        <select id="destSelect" name="dest" class="form-select" required>
+          <option value="" disabled selected>-- Select Destination Member --</option>
+          {% for u in users %}
+          <option value="{{ u.id }}" {% if dest_id == u.id %}selected{% endif %}>{{ u.name }}</option>
+          {% endfor %}
+        </select>
+      </div>
+
+      <div>
+        <button type="submit" class="btn btn-primary" style="width: 100%;">
+          Calculate Shortest Path
+        </button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- Path Result -->
+{% if result %}
+  <div class="card" style="margin-top: 1.5rem;">
+    <div class="card-header">
+      <h2 class="card-title">
+        BFS Path Result: {{ result.start_user.name }} &rarr; {{ result.dest_user.name }}
+      </h2>
+      {% if result.found %}
+        <span class="badge badge-green">
+          {{ result.links }} Friendship Link(s)
+        </span>
+      {% else %}
+        <span class="badge badge-gray">Disconnected Components</span>
+      {% endif %}
+    </div>
+    <div class="card-body">
+      {% if result.found %}
+        <p style="font-size: 0.95rem; margin-top: 0; margin-bottom: 1rem;">
+          {{ result.message }}
+        </p>
+
+        <!-- Visual Path Steps -->
+        <div class="path-container">
+          {% for node in result.path %}
+            <div class="path-node">
+              <div class="avatar-pill" style="width: 24px; height: 24px; font-size: 0.75rem;">
+                {{ node.name[0] }}
+              </div>
+              <a href="{{ url_for('user_detail', user_id=node.id) }}" style="text-decoration: none; color: inherit;">
+                {{ node.name }}
+              </a>
+            </div>
+            {% if not loop.last %}
+              <span class="path-arrow">&rarr;</span>
+            {% endif %}
+          {% endfor %}
+        </div>
+
+        <!-- Step by Step Breakdown Table -->
+        <h3 style="font-size: 0.95rem; margin-top: 1.5rem; margin-bottom: 0.75rem;">Step-by-Step Connection Hops</h3>
+        <div class="table-responsive">
+          <table class="table">
+            <thead>
+              <tr>
+                <th style="width: 80px;">Hop</th>
+                <th>From</th>
+                <th>To</th>
+                <th>Relationship</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for i in range(result.path | length - 1) %}
+              <tr>
+                <td><span class="badge badge-indigo">Hop #{{ i + 1 }}</span></td>
+                <td><strong>{{ result.path[i].name }}</strong></td>
+                <td><strong>{{ result.path[i + 1].name }}</strong></td>
+                <td><span class="badge badge-gray">Direct Friendship Edge</span></td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      {% else %}
+        <div class="empty-state">
+          <div class="empty-state-title">No Connection Path Found</div>
+          <div class="empty-state-desc">{{ result.message }}</div>
+          <a href="{{ url_for('friendships_list') }}" class="btn btn-secondary btn-sm">Connect These Members</a>
+        </div>
+      {% endif %}
+    </div>
+  </div>
+{% endif %}
+{% endblock %}

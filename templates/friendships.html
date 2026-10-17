@@ -1,0 +1,135 @@
+{% extends "base.html" %}
+
+{% block title %}Friendship Connections &bull; Social Network System{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <div>
+    <h1 class="page-title">Friendship Connections</h1>
+    <p class="page-subtitle">Establish undirected friendship links between members, inspect active connections, and remove edges.</p>
+  </div>
+</div>
+
+<div style="display: grid; grid-template-columns: 1fr 2fr; gap: 1.75rem; align-items: start;">
+  <!-- Create Friendship Form -->
+  <div class="card">
+    <div class="card-header">
+      <h2 class="card-title">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <line x1="12" y1="5" x2="12" y2="19"></line>
+          <line x1="5" y1="12" x2="19" y2="12"></line>
+        </svg>
+        Connect Two Members
+      </h2>
+    </div>
+    <div class="card-body">
+      <form action="{{ url_for('add_friendship') }}" method="POST">
+        <div class="form-group">
+          <label class="form-label" for="userSelect1">First Member <span style="color: var(--danger);">*</span></label>
+          <select id="userSelect1" name="user1_id" class="form-select" required>
+            <option value="" disabled selected>-- Select Member A --</option>
+            {% for u in users %}
+            <option value="{{ u.id }}">{{ u.name }}</option>
+            {% endfor %}
+          </select>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label" for="userSelect2">Second Member <span style="color: var(--danger);">*</span></label>
+          <select id="userSelect2" name="user2_id" class="form-select" required>
+            <option value="" disabled selected>-- Select Member B --</option>
+            {% for u in users %}
+            <option value="{{ u.id }}">{{ u.name }}</option>
+            {% endfor %}
+          </select>
+          <div class="form-hint">Connections are bidirectional: graph[A] &harr; graph[B].</div>
+        </div>
+
+        <button type="submit" class="btn btn-primary" style="width: 100%;">
+          Create Friendship Link
+        </button>
+      </form>
+    </div>
+  </div>
+
+  <!-- Active Friendships Table -->
+  <div class="card">
+    <div class="card-header">
+      <h2 class="card-title">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
+          <circle cx="8.5" cy="7" r="4"></circle>
+          <line x1="20" y1="8" x2="20" y2="14"></line>
+        </svg>
+        All Active Friendships ({{ friendships | length }})
+      </h2>
+      <div style="max-width: 240px; width: 100%;">
+        <input type="text" id="tableSearchInput" class="form-control form-control-sm" placeholder="Filter connections...">
+      </div>
+    </div>
+    <div class="card-body" style="padding: 0;">
+      <div class="table-responsive">
+        <table class="table searchable-table">
+          <thead>
+            <tr>
+              <th>Member A</th>
+              <th style="text-align: center;">Connection</th>
+              <th>Member B</th>
+              <th style="text-align: right;">Action</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for u1, u2 in friendships %}
+            <tr>
+              <td>
+                <div style="display: flex; align-items: center; gap: 0.65rem;">
+                  <div class="avatar-pill" style="width: 28px; height: 28px; font-size: 0.8rem;">
+                    {{ u1.name[0] }}
+                  </div>
+                  <a href="{{ url_for('user_detail', user_id=u1.id) }}" style="font-weight: 600; text-decoration: none; color: var(--text-main);">
+                    {{ u1.name }}
+                  </a>
+                </div>
+              </td>
+              <td style="text-align: center; color: var(--primary);">
+                <svg width="24" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <line x1="5" y1="12" x2="19" y2="12"></line>
+                  <circle cx="5" cy="12" r="2" fill="currentColor"></circle>
+                  <circle cx="19" cy="12" r="2" fill="currentColor"></circle>
+                </svg>
+              </td>
+              <td>
+                <div style="display: flex; align-items: center; gap: 0.65rem;">
+                  <div class="avatar-pill" style="width: 28px; height: 28px; font-size: 0.8rem;">
+                    {{ u2.name[0] }}
+                  </div>
+                  <a href="{{ url_for('user_detail', user_id=u2.id) }}" style="font-weight: 600; text-decoration: none; color: var(--text-main);">
+                    {{ u2.name }}
+                  </a>
+                </div>
+              </td>
+              <td style="text-align: right;">
+                <form action="{{ url_for('remove_friendship') }}" method="POST" style="display: inline; margin: 0;">
+                  <input type="hidden" name="user1_id" value="{{ u1.id }}">
+                  <input type="hidden" name="user2_id" value="{{ u2.id }}">
+                  <button type="submit" class="btn btn-outline-danger btn-sm" onclick="return confirm('Disconnect {{ u1.name }} and {{ u2.name }}?');">
+                    Disconnect
+                  </button>
+                </form>
+              </td>
+            </tr>
+            {% else %}
+            <tr>
+              <td colspan="4" class="empty-state">
+                <div class="empty-state-title">No friendships established yet</div>
+                <div class="empty-state-desc">Use the connection form on the left to link two network participants together.</div>
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

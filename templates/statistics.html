@@ -1,0 +1,196 @@
+{% extends "base.html" %}
+
+{% block title %}Network Statistics &bull; Social Network System{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <div>
+    <h1 class="page-title">Network Statistics</h1>
+    <p class="page-subtitle">
+      Mathematical graph theory metrics calculated dynamically in Python directly from stored adjacency lists.
+    </p>
+  </div>
+</div>
+
+<!-- Primary Metric Cards -->
+<div class="metric-grid">
+  <div class="metric-card">
+    <div class="metric-header">
+      <span class="metric-label">Graph Vertices (|V|)</span>
+      <div class="metric-icon-box">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <circle cx="9" cy="7" r="4"></circle>
+          <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
+        </svg>
+      </div>
+    </div>
+    <div class="metric-value">{{ stats.total_users }}</div>
+    <div class="metric-footer">Total member count</div>
+  </div>
+
+  <div class="metric-card">
+    <div class="metric-header">
+      <span class="metric-label">Graph Edges (|E|)</span>
+      <div class="metric-icon-box">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <line x1="5" y1="12" x2="19" y2="12"></line>
+        </svg>
+      </div>
+    </div>
+    <div class="metric-value">{{ stats.total_friendships }}</div>
+    <div class="metric-footer">Undirected friendships</div>
+  </div>
+
+  <div class="metric-card">
+    <div class="metric-header">
+      <span class="metric-label">Average Degree (&mu;)</span>
+      <div class="metric-icon-box">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <circle cx="12" cy="12" r="10"></circle>
+          <line x1="12" y1="6" x2="12" y2="12"></line>
+        </svg>
+      </div>
+    </div>
+    <div class="metric-value">{{ stats.avg_friends_per_user }}</div>
+    <div class="metric-footer">2 &times; |E| / |V|</div>
+  </div>
+
+  <div class="metric-card">
+    <div class="metric-header">
+      <span class="metric-label">Network Density (&rho;)</span>
+      <div class="metric-icon-box">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <rect x="3" y="3" width="18" height="18" rx="2"></rect>
+          <circle cx="8.5" cy="8.5" r="1.5"></circle>
+        </svg>
+      </div>
+    </div>
+    <div class="metric-value">{{ stats.network_density }}</div>
+    <div class="metric-footer">2 &times; |E| / (|V| &times; (|V|-1))</div>
+  </div>
+</div>
+
+<!-- Secondary Statistics Grid -->
+<div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem; margin-bottom: 2rem;">
+  <!-- Hub Metrics -->
+  <div class="card" style="margin-bottom: 0;">
+    <div class="card-header">
+      <h2 class="card-title">Network Centrality Highlights</h2>
+    </div>
+    <div class="card-body">
+      <div style="margin-bottom: 1.25rem;">
+        <span class="metric-label">Most Connected Node (Max Degree)</span>
+        {% if stats.most_connected_user %}
+          <div style="font-size: 1.25rem; font-weight: 700; color: var(--text-main); margin-top: 0.25rem;">
+            {{ stats.most_connected_user.name }}
+          </div>
+          <div style="font-size: 0.85rem; color: var(--text-muted);">
+            {{ stats.most_connected_count }} direct connection(s) &bull; {{ stats.most_connected_user.bio }}
+          </div>
+        {% else %}
+          <div style="color: var(--text-muted); font-size: 0.9rem;">No members in network</div>
+        {% endif %}
+      </div>
+
+      <div>
+        <span class="metric-label">Isolated Nodes (Degree = 0)</span>
+        <div style="font-size: 1.25rem; font-weight: 700; color: var(--text-main); margin-top: 0.25rem;">
+          {{ stats.isolated_users_count }} member(s)
+        </div>
+        {% if stats.isolated_users %}
+          <div style="margin-top: 0.5rem; display: flex; flex-wrap: wrap; gap: 0.35rem;">
+            {% for iso in stats.isolated_users %}
+              <span class="badge badge-gray">{{ iso.name }}</span>
+            {% endfor %}
+          </div>
+        {% else %}
+          <div style="font-size: 0.85rem; color: var(--text-muted); margin-top: 0.25rem;">
+            All members have at least one connection.
+          </div>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+
+  <!-- Theoretical Formulas & Validation -->
+  <div class="card" style="margin-bottom: 0;">
+    <div class="card-header">
+      <h2 class="card-title">Graph Theory Computation Details</h2>
+    </div>
+    <div class="card-body" style="font-size: 0.88rem; color: var(--text-muted);">
+      <p style="margin-top: 0;">
+        <strong>Adjacency List Handshaking Lemma:</strong><br>
+        The sum of vertex degrees across all members equals twice the number of friendships:
+        <code>&sum; deg(v) = 2 &times; |E| = {{ stats.total_friendships * 2 }}</code>.
+      </p>
+      <p>
+        <strong>Density Definition:</strong><br>
+        The ratio of actual edges to the maximum possible edges in a simple undirected graph:
+        <code>Density = 2 &times; {{ stats.total_friendships }} / ({{ stats.total_users }} &times; {{ stats.total_users - 1 if stats.total_users > 1 else 1 }}) = {{ stats.network_density }}</code>.
+      </p>
+      <p style="margin-bottom: 0;">
+        All figures are calculated dynamically in Python with zero static or mocked values.
+      </p>
+    </div>
+  </div>
+</div>
+
+<!-- Detailed Member Degree Distribution Table -->
+<div class="card">
+  <div class="card-header">
+    <h2 class="card-title">
+      Member Degree &amp; Recommendation Distribution
+    </h2>
+  </div>
+  <div class="card-body" style="padding: 0;">
+    <div class="table-responsive">
+      <table class="table">
+        <thead>
+          <tr>
+            <th>Rank</th>
+            <th>Member</th>
+            <th>Degree (Friends Count)</th>
+            <th>Potential FoF Recommendations</th>
+            <th style="text-align: right;">Action</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for m in user_metrics %}
+          <tr>
+            <td><span class="badge badge-gray">#{{ loop.index }}</span></td>
+            <td>
+              <div style="display: flex; align-items: center; gap: 0.65rem;">
+                <div class="avatar-pill" style="width: 28px; height: 28px; font-size: 0.8rem;">
+                  {{ m.user.name[0] }}
+                </div>
+                <div>
+                  <a href="{{ url_for('user_detail', user_id=m.user.id) }}" style="font-weight: 600; text-decoration: none; color: var(--text-main);">
+                    {{ m.user.name }}
+                  </a>
+                  <div style="font-size: 0.75rem; color: var(--text-muted);">{{ m.user.bio }}</div>
+                </div>
+              </div>
+            </td>
+            <td>
+              <span class="badge badge-indigo">{{ m.degree }} connection(s)</span>
+            </td>
+            <td>
+              {% if m.recommendations_count > 0 %}
+                <span class="badge badge-green">{{ m.recommendations_count }} candidate(s)</span>
+              {% else %}
+                <span class="badge badge-gray">0 candidates</span>
+              {% endif %}
+            </td>
+            <td style="text-align: right;">
+              <a href="{{ url_for('recommendations_page', user_id=m.user.id) }}" class="btn btn-secondary btn-sm">
+                Recommendations
+              </a>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+{% endblock %}

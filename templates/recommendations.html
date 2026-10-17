@@ -1,0 +1,197 @@
+{% extends "base.html" %}
+
+{% block title %}Friend Recommendations &bull; Social Network System{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <div>
+    <h1 class="page-title">Friend Recommendation Engine</h1>
+    <p class="page-subtitle">
+      Discovers potential friends through Friends-of-Friends (FoF) analysis and ranks candidates by mutual connection count.
+    </p>
+  </div>
+</div>
+
+<!-- Select Member Form -->
+<div class="card">
+  <div class="card-header">
+    <h2 class="card-title">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon>
+      </svg>
+      Select Target Member
+    </h2>
+  </div>
+  <div class="card-body">
+    <form method="GET" action="{{ url_for('recommendations_page') }}" class="form-inline-grid">
+      <div class="form-group" style="margin-bottom: 0;">
+        <label class="form-label" for="userSelect">Network Member</label>
+        <select id="userSelect" name="user_id" class="form-select" required>
+          <option value="" disabled {% if not selected_user %}selected{% endif %}>-- Select a Member --</option>
+          {% for u in users %}
+          <option value="{{ u.id }}" {% if selected_user and selected_user.id == u.id %}selected{% endif %}>
+            {{ u.name }} ({{ social_graph.adj.get(u.id, []) | length }} friends)
+          </option>
+          {% endfor %}
+        </select>
+      </div>
+
+      <div>
+        <button type="submit" class="btn btn-primary" style="width: 100%;">
+          Generate Recommendations
+        </button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- Recommendation Results Section -->
+{% if selected_user %}
+  <div class="card">
+    <div class="card-header">
+      <h2 class="card-title">
+        Recommendations for {{ selected_user.name }}
+      </h2>
+      {% if recommendations_result %}
+        <span class="badge badge-gray" style="font-family: var(--font-mono);">
+          Calculated in {{ recommendations_result.execution_time_ms }} ms
+        </span>
+      {% endif %}
+    </div>
+    <div class="card-body">
+      {% if recommendations_result and recommendations_result.recommendations %}
+        <div class="rec-list">
+          {% for rec in recommendations_result.recommendations %}
+          <div class="rec-item">
+            <div style="display: flex; align-items: center; gap: 1rem;">
+              <div class="rec-rank-box">#{{ loop.index }}</div>
+              <div class="avatar-pill" style="width: 44px; height: 44px; font-size: 1.1rem;">
+                {{ rec.user.name[0] }}
+              </div>
+              <div>
+                <div style="display: flex; align-items: center; gap: 0.65rem;">
+                  <a href="{{ url_for('user_detail', user_id=rec.user.id) }}" style="font-weight: 700; font-size: 1.05rem; text-decoration: none; color: var(--text-main);">
+                    {{ rec.user.name }}
+                  </a>
+                  <span class="badge badge-indigo">
+                    {{ rec.mutual_count }} mutual connection(s)
+                  </span>
+                </div>
+                <div style="font-size: 0.85rem; color: var(--text-muted); margin-top: 0.15rem;">
+                  {{ rec.user.bio }}
+                </div>
+                <div style="font-size: 0.82rem; color: var(--primary); margin-top: 0.35rem; font-weight: 500;">
+                  &bull; {{ rec.explanation }}
+                </div>
+              </div>
+            </div>
+
+            <div>
+              <form action="{{ url_for('add_friendship') }}" method="POST" style="margin: 0;">
+                <input type="hidden" name="user1_id" value="{{ selected_user.id }}">
+                <input type="hidden" name="user2_id" value="{{ rec.user.id }}">
+                <input type="hidden" name="redirect_to" value="{{ url_for('recommendations_page', user_id=selected_user.id) }}">
+                <button type="submit" class="btn btn-primary btn-sm">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <line x1="12" y1="5" x2="12" y2="19"></line>
+                    <line x1="5" y1="12" x2="19" y2="12"></line>
+                  </svg>
+                  Connect
+                </button>
+              </form>
+            </div>
+          </div>
+          {% endfor %}
+        </div>
+      {% else %}
+        <div class="empty-state">
+          <div class="empty-state-title">No candidate recommendations found</div>
+          <div class="empty-state-desc">
+            {% if (social_graph.adj.get(selected_user.id, []) | length) == 0 %}
+              {{ selected_user.name }} has no direct friendships yet. The recommendation algorithm needs at least one connection to explore friends-of-friends.
+            {% else %}
+              {{ selected_user.name }} is already directly connected to all friends-of-friends in their network component.
+            {% endif %}
+          </div>
+          <a href="{{ url_for('friendships_list') }}" class="btn btn-secondary btn-sm">Manage Connections</a>
+        </div>
+      {% endif %}
+    </div>
+  </div>
+{% endif %}
+
+<!-- Mutual Friends Explorer Section -->
+<div class="card" style="margin-top: 2rem;">
+  <div class="card-header">
+    <h2 class="card-title">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <circle cx="9" cy="7" r="4"></circle>
+        <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
+        <circle cx="17" cy="11" r="3"></circle>
+      </svg>
+      Mutual Friends Inspector (Set Intersection)
+    </h2>
+  </div>
+  <div class="card-body">
+    <p style="font-size: 0.9rem; color: var(--text-muted); margin-top: 0; margin-bottom: 1.25rem;">
+      Select two individuals to inspect their common connections calculated via set intersection: <code>graph[A] &amp; graph[B]</code>.
+    </p>
+
+    <form method="GET" action="{{ url_for('recommendations_page') }}" class="form-inline-grid" style="grid-template-columns: 1fr 1fr auto;">
+      {% if selected_user %}
+        <input type="hidden" name="user_id" value="{{ selected_user.id }}">
+      {% endif %}
+
+      <div class="form-group" style="margin-bottom: 0;">
+        <label class="form-label" for="mutualU1">Person A</label>
+        <select id="mutualU1" name="mutual_u1" class="form-select" required>
+          <option value="" disabled selected>-- Select Person A --</option>
+          {% for u in users %}
+          <option value="{{ u.id }}" {% if m_u1 == u.id %}selected{% endif %}>{{ u.name }}</option>
+          {% endfor %}
+        </select>
+      </div>
+
+      <div class="form-group" style="margin-bottom: 0;">
+        <label class="form-label" for="mutualU2">Person B</label>
+        <select id="mutualU2" name="mutual_u2" class="form-select" required>
+          <option value="" disabled selected>-- Select Person B --</option>
+          {% for u in users %}
+          <option value="{{ u.id }}" {% if m_u2 == u.id %}selected{% endif %}>{{ u.name }}</option>
+          {% endfor %}
+        </select>
+      </div>
+
+      <div>
+        <button type="submit" class="btn btn-secondary" style="width: 100%;">
+          Find Mutual Friends
+        </button>
+      </div>
+    </form>
+
+    {% if mutual_result %}
+      <div style="margin-top: 1.5rem; padding: 1.25rem; background-color: var(--bg-subtle); border-radius: var(--radius-md); border: 1px solid var(--border-color);">
+        <h4 style="margin: 0 0 0.5rem 0; font-size: 1rem;">
+          Mutual Friends: {{ mutual_result.user1.name }} &amp; {{ mutual_result.user2.name }}
+          <span class="badge badge-indigo" style="margin-left: 0.5rem;">{{ mutual_result.count }} Common</span>
+        </h4>
+
+        {% if mutual_result.mutual_friends %}
+          <div style="display: flex; flex-wrap: wrap; gap: 0.5rem; margin-top: 0.75rem;">
+            {% for mf in mutual_result.mutual_friends %}
+              <div class="path-node" style="padding: 0.35rem 0.75rem;">
+                <div class="avatar-pill" style="width: 24px; height: 24px; font-size: 0.75rem;">{{ mf.name[0] }}</div>
+                <span>{{ mf.name }}</span>
+              </div>
+            {% endfor %}
+          </div>
+        {% else %}
+          <p style="color: var(--text-muted); font-size: 0.88rem; margin: 0.5rem 0 0 0;">
+            {{ mutual_result.message }}
+          </p>
+        {% endif %}
+      </div>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}

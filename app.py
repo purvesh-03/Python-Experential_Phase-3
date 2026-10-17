@@ -1,223 +1,505 @@
-from flask import Flask, render_template, request, redirect, url_for, flash
+"""
+app.py - Flask Application & HTTP Route Handlers
+Phase 3: Social Network Friend Recommendation System
+
+Provides:
+- Jinja2 Server-Rendered Views: Dashboard, Users, Profile, Friendships, Recommendations,
+  Network Explorer, Shortest Path, BFS Traversal, Statistics.
+- RESTful JSON API endpoints for dynamic frontend features and tests.
+- Form validation, CSRF protection, error handling, flash alerts, and CSV export.
+- Reliable Vercel serverless deployment entry point: exposes `app`.
+"""
+
+import csv
+import io
 import os
-from collections import deque
-import re
+import time
+from flask import (
+    Flask,
+    render_template,
+    request,
+    redirect,
+    url_for,
+    flash,
+    jsonify,
+    Response,
+    abort
+)
 
-app = Flask(__name__)
-app.secret_key = os.environ.get("SECRET_KEY", "friendnet-demo-key-change-in-production")
+from database import db
+from graph import SocialGraph
+from recommendations import recommend_friends, get_mutual_friends
 
-# Demo data. For persistent production data on Vercel, connect a hosted database.
-users = {"purvesh", "radha"}
-friends = {"purvesh": {"radha"}, "radha": {"purvesh"}}
+# Set up paths relative to this file for cross-platform and Vercel compatibility
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
-def clean_name(value):
-    value = re.sub(r"\s+", " ", (value or "").strip())
-    if not value or len(value) > 60 or not re.fullmatch(r"[A-Za-z][A-Za-z .'-]*", value):
-        return None
-    return value
+app = Flask(
+    __name__,
+    template_folder=os.path.join(BASE_DIR, "templates"),
+    static_folder=os.path.join(BASE_DIR, "static"),
+    static_url_path="/static"
+)
 
-def user_key(name):
-    return name.casefold()
+app.secret_key = os.environ.get("SECRET_KEY", "social-graph-phase3-college-project-2026")
 
-def get_name(key):
-    return next((u for u in users if user_key(u) == key), key)
+# In-memory Graph instance
+social_graph = SocialGraph()
 
-def add_user(name):
-    key = user_key(name)
-    if any(user_key(u) == key for u in users):
-        return False
-    users.add(name)
-    friends[key] = set()
-    return True
 
-def connect(a, b):
-    ka, kb = user_key(a), user_key(b)
-    if ka == kb or ka not in {user_key(u) for u in users} or kb not in {user_key(u) for u in users}:
-        return False, "Choose two different existing users."
-    if kb in friends.get(ka, set()):
-        return False, "These users are already friends."
-    friends.setdefault(ka, set()).add(kb)
-    friends.setdefault(kb, set()).add(ka)
-    return True, f"{get_name(ka)} and {get_name(kb)} are now connected."
+def sync_graph():
+    """Synchronizes the in-memory graph with the database."""
+    db.load_graph_from_db(social_graph)
 
-def disconnect(a, b):
-    ka, kb = user_key(a), user_key(b)
-    friends.get(ka, set()).discard(kb)
-    friends.get(kb, set()).discard(ka)
 
-def mutual_friends(a, b):
-    return sorted(friends.get(user_key(a), set()) & friends.get(user_key(b), set()))
+# Initialize DB and populate in-memory graph
+try:
+    db.init_db()
+    db.seed_initial_data_if_empty()
+    sync_graph()
+except Exception as e:
+    app.logger.error(f"Error during database initialization: {e}")
 
-def recommend(user):
-    key = user_key(user)
-    scores = {}
-    for friend in friends.get(key, set()):
-        for candidate in friends.get(friend, set()):
-            if candidate != key and candidate not in friends.get(key, set()):
-                scores[candidate] = scores.get(candidate, 0) + 1
-    return sorted(scores.items(), key=lambda item: (-item[1], item[0]))
 
-def bfs(start):
-    start = user_key(start)
-    if start not in {user_key(u) for u in users}:
-        return []
-    seen, queue, order = {start}, deque([start]), []
-    while queue:
-        current = queue.popleft()
-        order.append(get_name(current))
-        for nxt in sorted(friends.get(current, set())):
-            if nxt not in seen:
-                seen.add(nxt)
-                queue.append(nxt)
-    return order
+@app.before_request
+def ensure_graph_loaded():
+    """Ensures in-memory graph is populated for serverless cold-starts."""
+    if len(social_graph.users) == 0:
+        sync_graph()
 
-def shortest_path(start, end):
-    start, end = user_key(start), user_key(end)
-    valid = {user_key(u) for u in users}
-    if start not in valid or end not in valid:
-        return []
-    queue = deque([(start, [start])])
-    seen = {start}
-    while queue:
-        current, path = queue.popleft()
-        if current == end:
-            return [get_name(k) for k in path]
-        for nxt in sorted(friends.get(current, set())):
-            if nxt not in seen:
-                seen.add(nxt)
-                queue.append((nxt, path + [nxt]))
-    return []
 
-def stats():
-    count = len(users)
-    edge_count = sum(len(v) for v in friends.values()) // 2
-    degrees = {user_key(u): len(friends.get(user_key(u), set())) for u in users}
-    avg = (sum(degrees.values()) / count) if count else 0
-    isolated = sum(1 for d in degrees.values() if d == 0)
-    most = sorted(users, key=lambda u: (-degrees[user_key(u)], user_key(u)))
-    total_recs = sum(len(recommend(u)) for u in users)
-    return {
-        "users": count, "friendships": edge_count, "average": round(avg, 1),
-        "isolated": isolated, "most_name": most[0] if most else "—",
-        "most_count": degrees[user_key(most[0])] if most else 0,
-        "users_with_recs": sum(1 for u in users if recommend(u)),
-        "total_recs": total_recs
-    }
+# -----------------------------------------------------------------
+# Context Processor for Global Template Data
+# -----------------------------------------------------------------
 
 @app.context_processor
-def inject_navigation():
-    def friend_count(name):
-        return len(friends.get(user_key(name), set()))
-    return {"friend_count": friend_count, "nav_items": [
-        ("Dashboard", "dashboard"), ("Users", "users_page"),
-        ("Friendships", "friendships_page"), ("Recommendations", "recommendations_page"),
-        ("Network Explorer", "network_page"), ("Shortest Path", "shortest_path_page"),
-        ("Statistics", "statistics_page")
-    ]}
+def inject_global_data():
+    """Provides common data to all Jinja templates."""
+    all_users = social_graph.get_all_users()
+    return {
+        "all_users_global": all_users,
+        "current_year": time.strftime("%Y")
+    }
 
-@app.get("/")
+
+# -----------------------------------------------------------------
+# Page Routes
+# -----------------------------------------------------------------
+
+@app.route("/")
+@app.route("/dashboard")
 def dashboard():
-    return render_template("dashboard.html", stats=stats(), active="Dashboard")
+    """Dashboard view showing network metrics and quick actions."""
+    stats = social_graph.get_statistics()
+    all_users = social_graph.get_all_users()
+    friendships = social_graph.get_all_friendships()
 
-@app.route("/users", methods=["GET", "POST"])
-def users_page():
-    search = request.args.get("q", "").strip()
-    if request.method == "POST":
-        name = clean_name(request.form.get("name"))
-        if not name:
-            flash("Enter a valid name using letters, spaces, apostrophes, dots or hyphens.", "error")
-        elif add_user(name):
-            flash(f"Added {name}.", "success")
-        else:
-            flash("That user already exists (names are case-insensitive).", "error")
-        return redirect(url_for("users_page"))
-    shown = sorted([u for u in users if search.casefold() in u.casefold()], key=str.casefold)
-    return render_template("users.html", active="Users", users=shown, search=search, all_count=len(users))
+    # Top connected users
+    top_connected = sorted(
+        all_users,
+        key=lambda u: len(social_graph.adj.get(u["id"], set())),
+        reverse=True
+    )[:5]
 
-@app.post("/users/remove")
-def remove_user():
-    key = user_key(request.form.get("name", ""))
-    found = next((u for u in users if user_key(u) == key), None)
-    if found:
-        for friend in list(friends.get(key, set())):
-            friends.get(friend, set()).discard(key)
-        friends.pop(key, None)
-        users.remove(found)
-        flash(f"Removed {found} and their friendship links.", "success")
-    return redirect(url_for("users_page"))
+    return render_template(
+        "index.html",
+        stats=stats,
+        top_connected=top_connected,
+        total_friendships=len(friendships),
+        active_page="dashboard"
+    )
 
-@app.get("/users/<path:name>")
-def user_detail(name):
-    key = user_key(name)
-    found = next((u for u in users if user_key(u) == key), None)
-    if not found:
-        flash("User not found.", "error")
-        return redirect(url_for("users_page"))
-    return render_template("user_detail.html", active="Users", person=found,
-                           friends=sorted(friends.get(key, set())),
-                           recommendations=recommend(found))
 
-@app.route("/friendships", methods=["GET", "POST"])
-def friendships_page():
-    if request.method == "POST":
-        ok, message = connect(request.form.get("first"), request.form.get("second"))
-        flash(message, "success" if ok else "error")
-        return redirect(url_for("friendships_page"))
-    links = []
-    for key, vals in friends.items():
-        for other in vals:
-            if key < other:
-                links.append((get_name(key), get_name(other)))
-    links.sort(key=lambda pair: (pair[0].casefold(), pair[1].casefold()))
-    return render_template("friendships.html", active="Friendships",
-                           users=sorted(users, key=str.casefold), links=links)
+@app.route("/users")
+def users_list():
+    """User directory view with search and add user form."""
+    query = request.args.get("q", "").strip()
+    if query:
+        users = social_graph.search_users(query)
+    else:
+        users = social_graph.get_all_users()
 
-@app.post("/friendships/remove")
+    # Augment users with their friend count
+    users_with_counts = [
+        {
+            "data": u,
+            "friend_count": len(social_graph.adj.get(u["id"], set()))
+        }
+        for u in users
+    ]
+
+    return render_template(
+        "users.html",
+        users=users_with_counts,
+        search_query=query,
+        active_page="users"
+    )
+
+
+@app.route("/users/add", methods=["POST"])
+def add_user():
+    """Handles adding a new user."""
+    name = request.form.get("name", "").strip()
+    bio = request.form.get("bio", "").strip() or "Member"
+
+    if not name:
+        flash("User name is required.", "danger")
+        return redirect(url_for("users_list"))
+
+    # Check for duplicate user name
+    existing = social_graph.get_user_by_name(name)
+    if existing:
+        flash(f"A user named '{name}' already exists in the network.", "warning")
+        return redirect(url_for("users_list"))
+
+    # Generate a unique user ID
+    user_id = f"u{int(time.time() * 1000) % 1000000}"
+
+    # Persist in DB and Graph
+    success, res = db.create_user(user_id, name, bio)
+    if success:
+        social_graph.add_user(user_id, name, bio)
+        flash(f"User '{name}' added successfully to the social network.", "success")
+    else:
+        flash(f"Failed to add user: {res}", "danger")
+
+    return redirect(url_for("users_list"))
+
+
+@app.route("/users/<user_id>")
+def user_detail(user_id):
+    """Individual user profile view with friends and personalized recommendations."""
+    user = social_graph.get_user(user_id)
+    if not user:
+        flash("User not found.", "warning")
+        return redirect(url_for("users_list"))
+
+    direct_friends = social_graph.get_friends(user_id)
+    recs = recommend_friends(social_graph, user_id, limit=5)
+
+    return render_template(
+        "user_detail.html",
+        user=user,
+        direct_friends=direct_friends,
+        recommendations=recs.get("recommendations", []),
+        active_page="users"
+    )
+
+
+@app.route("/users/delete/<user_id>", methods=["POST"])
+def delete_user(user_id):
+    """Removes a user and cascades deletion of friendships."""
+    user = social_graph.get_user(user_id)
+    if not user:
+        flash("User not found.", "danger")
+        return redirect(url_for("users_list"))
+
+    user_name = user["name"]
+    db_success, db_msg = db.delete_user(user_id)
+    if db_success:
+        social_graph.remove_user(user_id)
+        flash(f"User '{user_name}' and all associated connections removed.", "success")
+    else:
+        flash(f"Error removing user: {db_msg}", "danger")
+
+    return redirect(url_for("users_list"))
+
+
+@app.route("/friendships")
+def friendships_list():
+    """Friendship connections view with connect form and edge list."""
+    all_friendships = social_graph.get_all_friendships()
+    all_users = social_graph.get_all_users()
+
+    return render_template(
+        "friendships.html",
+        friendships=all_friendships,
+        users=all_users,
+        active_page="friendships"
+    )
+
+
+@app.route("/friendships/add", methods=["POST"])
+def add_friendship():
+    """Creates a new friendship edge between two users."""
+    u1 = request.form.get("user1_id", "").strip()
+    u2 = request.form.get("user2_id", "").strip()
+    redirect_to = request.form.get("redirect_to")
+
+    if not u1 or not u2:
+        flash("Please select both users.", "danger")
+        return redirect(redirect_to or url_for("friendships_list"))
+
+    if u1 == u2:
+        flash("A user cannot be friends with themselves.", "warning")
+        return redirect(redirect_to or url_for("friendships_list"))
+
+    user1 = social_graph.get_user(u1)
+    user2 = social_graph.get_user(u2)
+
+    if not user1 or not user2:
+        flash("One or both users do not exist.", "danger")
+        return redirect(redirect_to or url_for("friendships_list"))
+
+    if social_graph.are_friends(u1, u2):
+        flash(f"'{user1['name']}' and '{user2['name']}' are already friends.", "info")
+        return redirect(redirect_to or url_for("friendships_list"))
+
+    # Persist in DB and Graph
+    db_ok, db_msg = db.create_friendship(u1, u2)
+    if db_ok:
+        social_graph.add_friendship(u1, u2)
+        flash(f"Friendship created between {user1['name']} and {user2['name']}.", "success")
+    else:
+        flash(f"Failed to create friendship: {db_msg}", "danger")
+
+    return redirect(redirect_to or url_for("friendships_list"))
+
+
+@app.route("/friendships/remove", methods=["POST"])
 def remove_friendship():
-    disconnect(request.form.get("first", ""), request.form.get("second", ""))
-    flash("Friendship removed.", "success")
-    return redirect(url_for("friendships_page"))
+    """Removes a friendship edge between two users."""
+    u1 = request.form.get("user1_id", "").strip()
+    u2 = request.form.get("user2_id", "").strip()
+    redirect_to = request.form.get("redirect_to")
 
-@app.route("/recommendations", methods=["GET", "POST"])
+    user1 = social_graph.get_user(u1)
+    user2 = social_graph.get_user(u2)
+
+    db_ok, db_msg = db.delete_friendship(u1, u2)
+    if db_ok:
+        social_graph.remove_friendship(u1, u2)
+        u1_name = user1["name"] if user1 else u1
+        u2_name = user2["name"] if user2 else u2
+        flash(f"Friendship removed between {u1_name} and {u2_name}.", "info")
+    else:
+        flash(f"Failed to remove friendship: {db_msg}", "danger")
+
+    return redirect(redirect_to or url_for("friendships_list"))
+
+
+@app.route("/recommendations")
 def recommendations_page():
-    selected = request.form.get("user", "") if request.method == "POST" else request.args.get("user", "")
-    results = recommend(selected) if selected and user_key(selected) in {user_key(u) for u in users} else []
-    mutual = None
-    first, second = "", ""
-    if request.method == "POST" and request.form.get("action") == "mutual":
-        first, second = request.form.get("first", ""), request.form.get("second", "")
-        if first and second and user_key(first) != user_key(second):
-            mutual = mutual_friends(first, second)
+    """Friend recommendation engine view."""
+    all_users = social_graph.get_all_users()
+    selected_user_id = request.args.get("user_id", "").strip()
+
+    recommendations_result = None
+    selected_user = None
+
+    if selected_user_id:
+        selected_user = social_graph.get_user(selected_user_id)
+        if selected_user:
+            recommendations_result = recommend_friends(social_graph, selected_user_id)
         else:
-            flash("Select two different users to find mutual friends.", "error")
-    return render_template("recommendations.html", active="Recommendations",
-                           users=sorted(users, key=str.casefold), selected=selected,
-                           results=results, mutual=mutual, first=first, second=second)
+            flash("Selected user not found.", "warning")
 
-@app.route("/network", methods=["GET", "POST"])
-def network_page():
-    start = request.form.get("start", "") if request.method == "POST" else ""
-    traversal = bfs(start) if start else []
-    adjacency = [(u, len(friends.get(user_key(u), set())),
-                  [get_name(k) for k in sorted(friends.get(user_key(u), set()))]) for u in sorted(users, key=str.casefold)]
-    return render_template("network.html", active="Network Explorer", users=sorted(users, key=str.casefold),
-                           adjacency=adjacency, start=start, traversal=traversal)
+    # Mutual friends inspection section
+    m_u1 = request.args.get("mutual_u1", "").strip()
+    m_u2 = request.args.get("mutual_u2", "").strip()
+    mutual_result = None
+    if m_u1 and m_u2:
+        mutual_result = get_mutual_friends(social_graph, m_u1, m_u2)
 
-@app.route("/shortest-path", methods=["GET", "POST"])
+    return render_template(
+        "recommendations.html",
+        users=all_users,
+        selected_user=selected_user,
+        recommendations_result=recommendations_result,
+        mutual_result=mutual_result,
+        m_u1=m_u1,
+        m_u2=m_u2,
+        active_page="recommendations"
+    )
+
+
+@app.route("/network")
+def network_explorer():
+    """Network graph view with adjacency list table and SVG network visualizer."""
+    all_users = social_graph.get_all_users()
+    adjacency_list = []
+
+    for user in all_users:
+        friends = social_graph.get_friends(user["id"])
+        adjacency_list.append({
+            "user": user,
+            "friends": friends,
+            "degree": len(friends)
+        })
+
+    return render_template(
+        "network.html",
+        adjacency_list=adjacency_list,
+        users=all_users,
+        active_page="network"
+    )
+
+
+@app.route("/shortest-path")
 def shortest_path_page():
-    first = request.form.get("first", "")
-    second = request.form.get("second", "")
-    path = shortest_path(first, second) if request.method == "POST" else None
-    return render_template("shortest_path.html", active="Shortest Path",
-                           users=sorted(users, key=str.casefold), first=first, second=second, path=path)
+    """Shortest connection path explorer using BFS."""
+    all_users = social_graph.get_all_users()
+    start_id = request.args.get("start", "").strip()
+    dest_id = request.args.get("dest", "").strip()
 
-@app.get("/statistics")
+    result = None
+    if start_id and dest_id:
+        result = social_graph.shortest_path(start_id, dest_id)
+
+    return render_template(
+        "shortest_path.html",
+        users=all_users,
+        start_id=start_id,
+        dest_id=dest_id,
+        result=result,
+        active_page="shortest_path"
+    )
+
+
+@app.route("/bfs")
+def bfs_traversal_page():
+    """BFS traversal explorer view."""
+    all_users = social_graph.get_all_users()
+    start_id = request.args.get("start", "").strip()
+
+    result = None
+    if start_id:
+        result = social_graph.bfs_traversal(start_id)
+
+    return render_template(
+        "bfs.html",
+        users=all_users,
+        start_id=start_id,
+        result=result,
+        active_page="bfs"
+    )
+
+
+@app.route("/statistics")
 def statistics_page():
-    return render_template("statistics.html", active="Statistics", stats=stats())
+    """Dynamically calculated network statistics view."""
+    stats = social_graph.get_statistics()
+    all_users = social_graph.get_all_users()
+
+    # User degree details table
+    user_metrics = []
+    for u in all_users:
+        friends = social_graph.get_friends(u["id"])
+        recs = recommend_friends(social_graph, u["id"])
+        user_metrics.append({
+            "user": u,
+            "degree": len(friends),
+            "recommendations_count": len(recs.get("recommendations", []))
+        })
+
+    user_metrics.sort(key=lambda m: (-m["degree"], m["user"]["name"].lower()))
+
+    return render_template(
+        "statistics.html",
+        stats=stats,
+        user_metrics=user_metrics,
+        active_page="statistics"
+    )
+
+
+@app.route("/export/friends/<user_id>")
+def export_friends_csv(user_id):
+    """Exports a user's friend list as a downloadable CSV."""
+    user = social_graph.get_user(user_id)
+    if not user:
+        abort(404, description="User not found")
+
+    friends = social_graph.get_friends(user_id)
+    output = io.StringIO()
+    writer = csv.writer(output)
+    writer.writerow(["Friend User ID", "Friend Name", "Bio", "Member Since"])
+
+    for f in friends:
+        writer.writerow([f["id"], f["name"], f.get("bio", ""), f.get("created_at", "")])
+
+    output.seek(0)
+    filename = f"{user['name'].lower().replace(' ', '_')}_friends.csv"
+
+    return Response(
+        output.getvalue(),
+        mimetype="text/csv",
+        headers={"Content-Disposition": f"attachment; filename={filename}"}
+    )
+
+
+# -----------------------------------------------------------------
+# JSON API Endpoints
+# -----------------------------------------------------------------
+
+@app.route("/api/graph", methods=["GET"])
+def api_graph():
+    """Returns network graph nodes and edges for dynamic visualization."""
+    nodes = []
+    for uid, user in social_graph.users.items():
+        friends = social_graph.adj.get(uid, set())
+        nodes.append({
+            "id": uid,
+            "name": user["name"],
+            "bio": user.get("bio", "Member"),
+            "degree": len(friends)
+        })
+
+    edges = []
+    seen = set()
+    for u1, friends in social_graph.adj.items():
+        for u2 in friends:
+            edge_key = tuple(sorted([u1, u2]))
+            if edge_key not in seen:
+                seen.add(edge_key)
+                edges.append({"source": edge_key[0], "target": edge_key[1]})
+
+    return jsonify({"nodes": nodes, "edges": edges})
+
+
+@app.route("/api/recommend/<user_id>", methods=["GET"])
+def api_recommend(user_id):
+    """Returns JSON friend recommendations for user_id."""
+    return jsonify(recommend_friends(social_graph, user_id))
+
+
+@app.route("/api/shortest-path", methods=["GET"])
+def api_shortest_path():
+    """Returns JSON shortest path between start and dest query params."""
+    start = request.args.get("start")
+    dest = request.args.get("dest")
+    if not start or not dest:
+        return jsonify({"success": False, "message": "Missing start or dest parameter"}), 400
+    return jsonify(social_graph.shortest_path(start, dest))
+
+
+@app.route("/api/stats", methods=["GET"])
+def api_stats():
+    """Returns JSON network statistics."""
+    return jsonify(social_graph.get_statistics())
+
+
+# -----------------------------------------------------------------
+# Error Handlers
+# -----------------------------------------------------------------
 
 @app.errorhandler(404)
-def not_found(error):
-    return render_template("404.html", active=""), 404
+def page_not_found(e):
+    return render_template(
+        "error.html",
+        error_code=404,
+        error_title="Page Not Found",
+        error_message="The requested page or resource could not be found in the network system."
+    ), 404
+
+
+@app.errorhandler(500)
+def internal_server_error(e):
+    return render_template(
+        "error.html",
+        error_code=500,
+        error_title="Internal Server Error",
+        error_message="An unexpected server error occurred. Please verify database connection and retry."
+    ), 500
+
 
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)), debug=False)
+    app.run(debug=True, host="127.0.0.1", port=5000)
